@@ -1,6 +1,5 @@
 use clap::Parser;
 use std::io;
-use std::collections::HashSet;
 use std::io::BufRead;
 
 #[derive(Parser, Debug)]
@@ -10,11 +9,11 @@ struct Cli {
     delimiters: String,
 }
 
-fn update_spaces(delimiters: &HashSet<char>, mut spaces: Vec<bool>, string: &String) -> Vec<bool> {
+fn update_spaces(delimiters: &str, mut spaces: Vec<bool>, string: &String) -> Vec<bool> {
     for (i, c) in string.chars().enumerate() {
         match spaces.get_mut(i) {
-            Some(space) => *space = *space && (c.is_whitespace() || delimiters.contains(&c)),
-            None => spaces.push(c.is_whitespace() || delimiters.contains(&c))
+            Some(space) => *space = *space && (c.is_whitespace() || delimiters.contains(c)),
+            None => spaces.push(c.is_whitespace() || delimiters.contains(c))
         }
     }
     spaces
@@ -40,13 +39,12 @@ fn columns(spaces: &Vec<bool>) -> Vec<(usize, usize)> {
 
 fn main() -> io::Result<()> {
     let args = Cli::parse();
-    let delimiter_set: HashSet<char> = args.delimiters.chars().collect();
     
     let stdin = io::stdin();
     let in_handle = stdin.lock();
 
     let lines = in_handle.lines().collect::<io::Result<Vec<String>>>()?;
-    let spaces = lines.iter().fold(Vec::new(), |spaces, string| { update_spaces(&delimiter_set, spaces, string) });
+    let spaces = lines.iter().fold(Vec::new(), |spaces, string| { update_spaces(&args.delimiters, spaces, string) });
     let columns = columns(&spaces);
 
     let mut outln: Vec<String> = Vec::new();
@@ -70,7 +68,7 @@ pub mod tests {
     fn update_spaces_first_line() {
         let mut line = String::new();
         line.push_str("  a bb  ccc ");
-        let spaces = update_spaces(&HashSet::new(), Vec::new(), &line);
+        let spaces = update_spaces("", Vec::new(), &line);
         assert_eq!(spaces, vec![true, true, false, true, false, false, true, true, false, false, false, true])
     }
 
@@ -78,10 +76,10 @@ pub mod tests {
     fn update_spaces_two_lines() {
         let mut line = String::new();
         line.push_str("  a bb  ccc ");
-        let spaces = update_spaces(&HashSet::new(), Vec::new(), &line);
+        let spaces = update_spaces("", Vec::new(), &line);
         line.clear();
         line.push_str(" aa  b ccc  ");
-        let spaces = update_spaces(&HashSet::new(), spaces, &line);
+        let spaces = update_spaces("", spaces, &line);
         assert_eq!(spaces, vec![true, false, false, true, false, false, true, false, false, false, false, true])
     }
 
@@ -89,9 +87,7 @@ pub mod tests {
     fn update_spaces_comma() {
         let mut line = String::new();
         line.push_str(",,a,bb,,ccc,");
-        let mut delims = HashSet::new();
-        delims.insert(',');
-        let spaces = update_spaces(&delims, Vec::new(), &line);
+        let spaces = update_spaces(",", Vec::new(), &line);
         assert_eq!(spaces, vec![true, true, false, true, false, false, true, true, false, false, false, true])
     }
 
@@ -99,9 +95,7 @@ pub mod tests {
     fn update_spaces_mixed_delims() {
         let mut line = String::new();
         line.push_str(", a,bb, ccc,");
-        let mut delims = HashSet::new();
-        delims.insert(',');
-        let spaces = update_spaces(&delims, Vec::new(), &line);
+        let spaces = update_spaces(",", Vec::new(), &line);
         assert_eq!(spaces, vec![true, true, false, true, false, false, true, true, false, false, false, true])
     }
 
