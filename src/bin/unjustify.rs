@@ -28,6 +28,8 @@ struct Cli {
     delimiters: String,
     #[arg(long, short, help="whitespace delimited?", default_value_t=SplitWhitespace::Any)]
     whitespace: SplitWhitespace,
+    #[arg(long, short='H', help="pick columns from first row only")]
+    header: bool,
 }
 
 impl Default for Cli {
@@ -35,6 +37,7 @@ impl Default for Cli {
         Cli {
             delimiters: "".to_string(),
             whitespace: SplitWhitespace::Any,
+            header: false,
         }
     }
 }
@@ -95,7 +98,11 @@ fn main() -> io::Result<()> {
     let in_handle = stdin.lock();
 
     let lines = in_handle.lines().collect::<io::Result<Vec<String>>>()?;
-    let spaces = lines.iter().fold(Vec::new(), |spaces, string| { update_spaces(&args, spaces, string) });
+    let spaces = if args.header && lines.len() >= 1 {
+        update_spaces(&args, Vec::new(), &lines[0])
+    } else {
+        lines.iter().fold(Vec::new(), |spaces, string| { update_spaces(&args, spaces, string) })
+    };
     let columns = columns(&spaces);
 
     let mut outln: Vec<String> = Vec::new();
