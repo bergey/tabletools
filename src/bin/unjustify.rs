@@ -30,6 +30,10 @@ struct Cli {
     whitespace: SplitWhitespace,
     #[arg(long, short='H', help="pick columns from first row only")]
     header: bool,
+    #[arg(long, short, help="count +-| and other border drawing characters as delimiters")]
+    border: bool,
+    #[arg(long="output", short='O', help="output delimiter", default_value=",")]
+    output_delimiter: String,
 }
 
 impl Default for Cli {
@@ -38,6 +42,8 @@ impl Default for Cli {
             delimiters: "".to_string(),
             whitespace: SplitWhitespace::Any,
             header: false,
+            border: false,
+            output_delimiter: ",".to_string(),
         }
     }
 }
@@ -92,7 +98,8 @@ fn columns(spaces: &Vec<bool>) -> Vec<(usize, usize)> {
 }
 
 fn main() -> io::Result<()> {
-    let args = Cli::parse();
+    let mut args = Cli::parse();
+    if args.border { args.delimiters.push_str("+-|│"); }
     
     let stdin = io::stdin();
     let in_handle = stdin.lock();
@@ -109,9 +116,11 @@ fn main() -> io::Result<()> {
     for string in lines {
         let line: Vec<char> = string.chars().collect();
         for (s, e) in &columns {
-            outln.push(line[*s..*e].iter().collect::<String>().trim().to_string());
+            if *s >= line.len() { continue; }
+            let e_ = (*e).min(line.len());
+            outln.push(line[*s..e_].iter().collect::<String>().trim().to_string());
         }
-        println!("{}", &outln.join(","));
+        println!("{}", &outln.join(&args.output_delimiter));
         outln.clear();
     }
 
