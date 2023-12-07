@@ -1,7 +1,31 @@
+use clap::Parser;
 use std::io;
 use std::collections::HashMap;
 use serde_json;
 use serde_json::{Map, Value};
+
+#[derive(Debug, Parser)]
+struct Cli {
+    #[arg(long, short='O', help="between columns of output [default single space]")]
+    output_delimiter: Option<String>,
+    #[arg(long, help="between lines of output [default newline]")]
+    line_delimiter: Option<String>,
+    #[arg(long, help="in column names, between nested json object keys", default_value=".")]
+    attribute_separator: String,
+    #[arg(long, default_value="", help="output representation of missing values")]
+    missing: String,
+}
+
+impl Default for Cli {
+    fn default() -> Self {
+        Cli {
+            output_delimiter: None,
+            line_delimiter: None,
+            attribute_separator: ".".to_string(),
+            missing: "".to_string(),
+        }
+    }
+}
 
 type Columns = Vec<String>; // consider a parallel Set to make contains cheaper
 type Row = HashMap<String, String>;
@@ -21,25 +45,20 @@ fn singleton(path: &str, value: String) -> Vec<Row> {
     ret
 }
 
-// a single row with no columns, as base case for fold
-fn empty() -> Vec<Row> {
-    let row = HashMap::new();
-    let mut ret = Vec::new();
-    ret.push(row);
-    ret
-}
-
-fn recurse_array(columns: &mut Columns, path: &str, array: Vec<Value>) -> Vec<Row> {
+fn recurse_array(args: &Cli, columns: &mut Columns, path: &str, array: Vec<Value>) -> Vec<Row> {
     array.iter().fold(Vec::new(), |mut acc, val| {
-        acc.append(&mut recurse_value(columns, path, val.clone()));
+        acc.append(&mut recurse_value(args, columns, path, val.clone()));
         acc
     })
 }
 
-fn recurse_map(columns: &mut Columns, path: &str, map: Map<String, Value>) -> Vec<Row> {
-    map.iter().fold(empty(), |acc, (key, value)| {
-        let path_key = if path == "" { key.clone() } else { format!("{}.{}", path, key) };
-        let rhs = recurse_value(columns, &path_key, value.clone());
+fn recurse_map(args: &Cli, columns: &mut Columns, path: &str, map: Map<String, Value>) -> Vec<Row> {
+    let mut empty = Vec::new();
+    empty.push(HashMap::new());
+
+    map.iter().fold(empty, |acc, (key, value)| {
+        let path_key = if path == "" { key.clone() } else { format!("{}{}{}", path, args.attribute_separator, key) };
+        let rhs = recurse_value(args, columns, &path_key, value.clone());
         let mut ret = Vec::new();
         // merge each possible pair of partial rows
         for a in acc {
@@ -53,7 +72,7 @@ fn recurse_map(columns: &mut Columns, path: &str, map: Map<String, Value>) -> Ve
     })
 }
 
-fn recurse_value(columns: &mut Columns, path: &str, value: Value) -> Vec<Row> {
+fn recurse_value(args: &Cli, columns: &mut Columns, path: &str, value: Value) -> Vec<Row> {
     match value {
         Value::Null => Vec::new(),
         Value::String(s) => {
@@ -68,32 +87,39 @@ fn recurse_value(columns: &mut Columns, path: &str, value: Value) -> Vec<Row> {
             ensure(columns, path);
             singleton(path, format!("{}", n))
         },
-        Value::Array(arr) => recurse_array(columns, path, arr),
-        Value::Object(map) => recurse_map(columns, path, map),
+        Value::Array(arr) => recurse_array(args, columns, path, arr),
+        Value::Object(map) => recurse_map(args, columns, path, map),
     }
 }
 
 fn main() -> io::Result<()> {
-    // parse args
-    // parse stdin as json
+    let args = Cli::parse();
+    let output_delimiter = match &args.output_delimiter {
+        Some(s) => s,
+        None => " "
+    };
+    let line_delimiter = match &args.line_delimiter {
+        Some(s) => s,
+        None => "\n",
+    };
+
     let json: Value = serde_json::from_reader(io::stdin())?;
 
     // recurse into json, building columns & rows as we go
     let mut columns: Columns = Vec::new();
-    // TODO validate that outer is an array?
-    let rows = recurse_value(&mut columns, "", json);
+    let rows = recurse_value(&args, &mut columns, "", json);
 
     // output
-    println!("{}", columns.join(" "));
+    print!("{}{}", columns.join(output_delimiter), line_delimiter);
     for r in rows.iter() {
         let mut out = Vec::new();
         for c in columns.iter() {
             out.push(match r.get(c) {
                 Some(s) => s.clone(),
-                None => "".to_string(), // TODO sentinal value for nulls
+                None => args.missing.clone(),
             });
         }
-        println!("{}", out.join(" "));
+        print!("{}{}", out.join(output_delimiter), line_delimiter);
     }
     Ok(())
 }
@@ -130,7 +156,7 @@ pub mod tests {
 
     fn assert_columns_and_rows(input: Value, e_columns: &str, e_rows: &[&str]) {
         let mut columns = Vec::new();
-        let rows = recurse_value(&mut columns, "", input);
+        let rows = recurse_value(&Cli::default(), &mut columns, "", input);
         assert_columns_eq(&columns, e_columns);
         assert_eq!(rows.len(), e_rows.len());
         for (a, e) in std::iter::zip(rows, e_rows) {
@@ -149,14 +175,14 @@ pub mod tests {
     #[test]
     fn columns_leafs() {
         let mut columns = Vec::new();
-        recurse_value(&mut columns, "", leafs());
+        recurse_value(&Cli::default(), &mut columns, "", leafs());
         assert_columns_eq(&columns, "b n s");
     }
 
     #[test]
     fn row_leafs() {
         let mut columns = Vec::new();
-        let rows = recurse_value(&mut columns, "", leafs());
+        let rows = recurse_value(&Cli::default(), &mut columns, "", leafs());
         assert_eq!(rows.len(), 1);
         assert_row_eq(&rows[0], "n:123 b:true s:alpha");
     }
@@ -173,12 +199,7 @@ pub mod tests {
                 "b": "big",
             }
         ]);
-        let mut columns = Vec::new();
-        let rows = recurse_value(&mut columns, "", input);
-        assert_columns_eq(&columns, "a b");
-        assert_eq!(rows.len(), 2);
-        assert_row_eq(&rows[0], "a:alpha b:bog");
-        assert_row_eq(&rows[1], "a:ack b:big");
+        assert_columns_and_rows(input, "a b", &vec!["a:alpha b:bog", "a:ack b:big"]);
     }
 
     #[test]
