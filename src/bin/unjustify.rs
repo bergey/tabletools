@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use std::collections::HashMap;
 use std::process;
 use std::io;
 use std::io::BufRead;
@@ -25,6 +26,8 @@ impl fmt::Display for SplitWhitespace {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    #[command()]
+    output_columns: Vec<String>,
     #[arg(long, short, help="additional column delimiters", default_value="")]
     delimiters: String,
     #[arg(long, short, help="whitespace delimited?", default_value_t=SplitWhitespace::Any)]
@@ -48,6 +51,7 @@ struct Cli {
 impl Default for Cli {
     fn default() -> Self {
         Cli {
+            output_columns: Vec::new(),
             header: false,
             delimiters: "".to_string(),
             whitespace: SplitWhitespace::Any,
@@ -154,6 +158,38 @@ fn columns(spaces: &Vec<bool>) -> Vec<(usize, usize)> {
     ret
 }
 
+fn split_line(columns: &[(usize, usize)], line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let line: Vec<char> = line.chars().collect();
+    for (s, e) in columns {
+        if *s >= line.len() { continue; }
+        let e_ = (*e).min(line.len());
+        out.push(line[*s..e_].iter().collect::<String>().trim().to_string());
+    }
+    out
+}
+
+fn output_columns(columns: &[(usize, usize)], header: &str, desired: &[String]) -> Vec<(usize, usize)>{
+    if desired.len() == 0 {
+        return columns.to_vec();
+    }
+
+    let headings = split_line(columns, header);
+    let mut mapping = HashMap::new();
+    for (head, range) in std::iter::zip(headings, columns) {
+        mapping.insert(head, range);
+    }
+
+    let mut ret = Vec::new();
+    for head in desired {
+        match mapping.get(head) {
+            Some(range) => ret.push(**range),
+            None => (), // TODO error?
+        }
+    }
+    ret
+}
+
 fn main() -> io::Result<()> {
     let mut args = Cli::parse();
     if args.border { args.delimiters.push_str("+-|│"); }
@@ -169,24 +205,20 @@ fn main() -> io::Result<()> {
     let in_handle = stdin.lock();
 
     let lines = in_handle.lines().collect::<io::Result<Vec<String>>>()?;
-    let spaces = if args.header && lines.len() >= 1 {
+    if lines.len() == 0 {
+        process::exit(2);
+    }
+    let spaces = if args.header {
         update_spaces(&args, Vec::new(), &lines[0])
     } else {
         lines.iter().fold(Vec::new(), |spaces, string| { update_spaces(&args, spaces, string) })
     };
     let columns = columns(&spaces);
+    let output_columns = output_columns(&columns, &lines[0], args.output_columns.as_ref());
 
-    eprintln!("{:?}", columns);
-    let mut outln: Vec<String> = Vec::new();
     for string in lines {
-        let line: Vec<char> = string.chars().collect();
-        for (s, e) in &columns {
-            if *s >= line.len() { continue; }
-            let e_ = (*e).min(line.len());
-            outln.push(line[*s..e_].iter().collect::<String>().trim().to_string());
-        }
+        let outln = split_line(&output_columns, &string);
         print!("{}{}", &outln.join(&args.computed_output_delimiter()), args.computed_line_delimiter());
-        outln.clear();
     }
 
     Ok(())
