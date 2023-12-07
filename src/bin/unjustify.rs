@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use std::process;
 use std::io;
 use std::io::BufRead;
 use std::fmt;
@@ -28,22 +29,76 @@ struct Cli {
     delimiters: String,
     #[arg(long, short, help="whitespace delimited?", default_value_t=SplitWhitespace::Any)]
     whitespace: SplitWhitespace,
-    #[arg(long, short='H', help="pick columns from first row only")]
-    header: bool,
     #[arg(long, short, help="count +-| and other border drawing characters as delimiters")]
     border: bool,
-    #[arg(long="output", short='O', help="output delimiter", default_value=",")]
-    output_delimiter: String,
+    #[arg(long="output", short='O', help="output delimiter (default ,)")]
+    output_delimiter: Option<String>,
+    #[arg(long, help="ascii unit separator character (overrides output delimiter)")]
+    unit_separator: bool,
+    #[arg(long, help="line delimiter (default newline)")]
+    line_delimiter: Option<String>,
+    #[arg(long, help="ascii record separator character (overrides line delimiter)")]
+    record_separator: bool,
+    #[arg(short='0', help="null (overrides line delimiter)")]
+    null_end_line: bool,
+    #[arg(long, short='H', help="pick columns from first row only")]
+    header: bool,
 }
 
 impl Default for Cli {
     fn default() -> Self {
         Cli {
+            header: false,
             delimiters: "".to_string(),
             whitespace: SplitWhitespace::Any,
-            header: false,
             border: false,
-            output_delimiter: ",".to_string(),
+            output_delimiter: None,
+            unit_separator: false,
+            line_delimiter: None,
+            record_separator: false,
+            null_end_line: false,
+        }
+    }
+}
+
+impl Cli {
+    fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        if self.unit_separator && self.output_delimiter.is_some() {
+            errors.push("--unit-separator is incompatible with --output".to_string());
+        }
+        if self.null_end_line && self.line_delimiter.is_some() {
+            errors.push("--line-delimiter is incompatible with -0".to_string())
+        }
+        if self.record_separator && self.line_delimiter.is_some() {
+            errors.push("--line-delimiter is incompatible with --record-separator".to_string())
+        }
+        if self.record_separator && self.null_end_line {
+            errors.push("--record-separator is incompatible with -0".to_string())
+        }
+       errors
+    }
+
+    fn computed_output_delimiter(&self) -> String {
+        // by now we know that there are no conflicting options, so order doesn't matter
+        if self.unit_separator {
+            "\x1F".to_string()
+        } else if let Some(s) = &self.output_delimiter {
+            s.clone()
+        } else {
+            ",".to_string()
+        }
+    }
+
+    fn computed_line_delimiter(&self) -> String {
+        if self.null_end_line {
+            "\0".to_string()
+        } else if self.record_separator {
+            "\x1E".to_string()
+        } else if let Some(s) = &self.line_delimiter {
+            s.clone()
+        } else {
+            "\n".to_string()
         }
     }
 }
@@ -54,7 +109,6 @@ fn some_whitespace(c: Option<char>) -> bool {
         None => false,
     }
 }
-   
 
 fn is_delimiter(args: &Cli, before: Option<char>, c: char, after: Option<char>) -> bool {
     let matches_whitespace = match args.whitespace {
@@ -94,13 +148,23 @@ fn columns(spaces: &Vec<bool>) -> Vec<(usize, usize)> {
             (_, _) => (),
         }
     }
+    if let Some(pos) = start {
+        ret.push((pos, spaces.len()));
+    }
     ret
 }
 
 fn main() -> io::Result<()> {
     let mut args = Cli::parse();
     if args.border { args.delimiters.push_str("+-|│"); }
-    
+    let validation_errors = args.validate();
+    if validation_errors.len() > 0 {
+        for e in validation_errors {
+            eprintln!("{}", e);
+        }
+        process::exit(1);
+    }
+
     let stdin = io::stdin();
     let in_handle = stdin.lock();
 
@@ -112,6 +176,7 @@ fn main() -> io::Result<()> {
     };
     let columns = columns(&spaces);
 
+    eprintln!("{:?}", columns);
     let mut outln: Vec<String> = Vec::new();
     for string in lines {
         let line: Vec<char> = string.chars().collect();
@@ -120,7 +185,7 @@ fn main() -> io::Result<()> {
             let e_ = (*e).min(line.len());
             outln.push(line[*s..e_].iter().collect::<String>().trim().to_string());
         }
-        println!("{}", &outln.join(&args.output_delimiter));
+        print!("{}{}", &outln.join(&args.computed_output_delimiter()), args.computed_line_delimiter());
         outln.clear();
     }
 
@@ -206,10 +271,16 @@ pub mod tests {
         let runs = columns(&vec![true, true, false, true, false, false, true, true, false, false, false, true]);
         assert_eq!(runs, vec![(2, 3), (4, 6), (8, 11)]);
     }
-    
+
     #[test]
     fn columns_two_lines() {
         let runs = columns(&vec![true, false, false, true, false, false, true, false, false, false, false, true]);
+        assert_eq!(runs, vec![(1, 3), (4, 6), (7, 11)]);
+    }
+
+    #[test]
+    fn columns_no_trailing_whitespace() {
+        let runs = columns(&vec![true, false, false, true, false, false, true, false, false, false, false]);
         assert_eq!(runs, vec![(1, 3), (4, 6), (7, 11)]);
     }
 }
