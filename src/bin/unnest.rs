@@ -5,6 +5,8 @@ use serde_json;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Parser)]
+#[command(version)]
+/// turn nested JSON into tables
 struct Cli {
     #[arg(long, short='O', help="between columns of output [default single space]")]
     output_delimiter: Option<String>,

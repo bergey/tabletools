@@ -24,29 +24,53 @@ impl fmt::Display for SplitWhitespace {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version)]
+/// make tables formatted for human readers easier to program against
+///
+/// By default handles justified whitespace-separated columns,
+/// including many cases where individual fields include whitespace.
 struct Cli {
     #[command()]
     output_columns: Vec<String>,
-    #[arg(long, short, help="case insensitive match for column names")]
+
+    #[arg(long, short)]
+    /// case insensitive match for column names
     insensitive: bool,
-    #[arg(long, short, help="additional column delimiters", default_value="")]
+
+    #[arg(long, short, default_value="")]
+    /// additional column delimiters
     delimiters: String,
-    #[arg(long, short, help="whitespace delimited?", default_value_t=SplitWhitespace::Any)]
+
+    #[arg(long, short, default_value_t=SplitWhitespace::Any)]
+    /// whitespace delimited?
     whitespace: SplitWhitespace,
-    #[arg(long, short, help="count +-| and other border drawing characters as delimiters")]
+
+    #[arg(long, short)]
+    /// count +-| and other border drawing characters as delimiters
     border: bool,
-    #[arg(long="output", short='O', help="output delimiter (default ,)")]
+
+    #[arg(long="output", short='O')]
+    /// output delimiter (default ,)
     output_delimiter: Option<String>,
-    #[arg(long, help="ascii unit separator character (overrides output delimiter)")]
+
+    #[arg(long)]
+    /// ascii unit separator character (overrides output delimiter)
     unit_separator: bool,
-    #[arg(long, help="line delimiter (default newline)")]
+
+    #[arg(long)]
+    /// line delimiter (default newline)
     line_delimiter: Option<String>,
-    #[arg(long, help="ascii record separator character (overrides line delimiter)")]
+
+    #[arg(long)]
+    /// ascii record separator character (overrides line delimiter)
     record_separator: bool,
-    #[arg(short='0', help="null (overrides line delimiter)")]
+
+    #[arg(short='0')]
+    /// null (overrides line delimiter)
     null_end_line: bool,
-    #[arg(long, short='H', help="pick columns from first row only")]
+
+    #[arg(long, short='H')]
+    /// pick columns from first row only
     header: bool,
 }
 
