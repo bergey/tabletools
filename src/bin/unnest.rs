@@ -30,7 +30,7 @@ fn empty() -> Vec<Row> {
 }
 
 fn recurse_array(columns: &mut Columns, path: &str, array: Vec<Value>) -> Vec<Row> {
-    array.iter().fold(empty(), |mut acc, val| {
+    array.iter().fold(Vec::new(), |mut acc, val| {
         acc.append(&mut recurse_value(columns, path, val.clone()));
         acc
     })
@@ -88,9 +88,10 @@ fn main() -> io::Result<()> {
     for r in rows.iter() {
         let mut out = Vec::new();
         for c in columns.iter() {
-            if let Some(s) = r.get(c) {
-                out.push(s.clone())
-            }
+            out.push(match r.get(c) {
+                Some(s) => s.clone(),
+                None => "".to_string(), // TODO sentinal value for nulls
+            });
         }
         println!("{}", out.join(" "));
     }
@@ -101,13 +102,6 @@ fn main() -> io::Result<()> {
 pub mod tests {
     use super::*;
     use serde_json::json;
-
-    fn leafs() -> Value {
-        json!({
-            "n": 123,
-            "b": true,
-        })
-    }
 
     fn assert_columns_eq(actual: &Columns, expected: &str) {
         let words: Vec<&str> = expected.split_whitespace().collect();
@@ -122,21 +116,41 @@ pub mod tests {
             let mut kv = w.split(":");
             (kv.next().unwrap(), kv.next().unwrap())
         }).collect();
-        assert!(actual.len() == pairs.len(), "{:?} has length {} expected {}", actual, actual.len(), pairs.len());
+        assert!(actual.len() == pairs.iter().filter(|(_, v)| { v != &"" }).count(), "{:?} has length {} expected {}", actual, actual.len(), pairs.len());
         for (k, v) in pairs {
             let o_v = actual.get(k);
-            match o_v {
-                None => panic!("expected row to include key {}", k),
-                Some(a) => assert!(a == v, "row has {} at key {} expected {}", a, k, v),
+            match (o_v, v) {
+                (None, "") => (),
+                (Some(a), "") => panic!("row has unexpected {} at key {}", a, k),
+                (None, _) => panic!("expected row to include key {}", k),
+                (Some(a), _) => assert!(a == v, "row has {} at key {} expected {}", a, k, v),
             }
         }
+    }
+
+    fn assert_columns_and_rows(input: Value, e_columns: &str, e_rows: &[&str]) {
+        let mut columns = Vec::new();
+        let rows = recurse_value(&mut columns, "", input);
+        assert_columns_eq(&columns, e_columns);
+        assert_eq!(rows.len(), e_rows.len());
+        for (a, e) in std::iter::zip(rows, e_rows) {
+            assert_row_eq(&a, e);
+        }
+    }
+
+    fn leafs() -> Value {
+        json!({
+            "n": 123,
+            "b": true,
+            "s": "alpha"
+        })
     }
 
     #[test]
     fn columns_leafs() {
         let mut columns = Vec::new();
         recurse_value(&mut columns, "", leafs());
-        assert_columns_eq(&columns, "b n");
+        assert_columns_eq(&columns, "b n s");
     }
 
     #[test]
@@ -144,6 +158,88 @@ pub mod tests {
         let mut columns = Vec::new();
         let rows = recurse_value(&mut columns, "", leafs());
         assert_eq!(rows.len(), 1);
-        assert_row_eq(&rows[0], "n:123 b:true");
+        assert_row_eq(&rows[0], "n:123 b:true s:alpha");
     }
+
+    #[test]
+    fn outer_list() {
+        let input = json!([
+            {
+                "a": "alpha",
+                "b": "bog",
+            },
+            {
+                "a": "ack",
+                "b": "big",
+            }
+        ]);
+        let mut columns = Vec::new();
+        let rows = recurse_value(&mut columns, "", input);
+        assert_columns_eq(&columns, "a b");
+        assert_eq!(rows.len(), 2);
+        assert_row_eq(&rows[0], "a:alpha b:bog");
+        assert_row_eq(&rows[1], "a:ack b:big");
+    }
+
+    #[test]
+    fn inner_list() {
+        let input = json!({
+            "a": "ack",
+            "b": [
+                "alpha",
+                "bravo",
+                "charlie",
+            ]
+        });
+        assert_columns_and_rows(input, "a b", &vec!["a:ack b:alpha", "a:ack b:bravo", "a:ack b:charlie"]);
+    }
+
+    #[test]
+    fn cross_product() {
+        let input = json!({
+            "a": [
+                "foo",
+                "bar",
+            ],
+            "b": [
+                "alpha",
+                "bravo",
+            ]
+        });
+        assert_columns_and_rows(input, "a b", &vec!["a:foo b:alpha", "a:foo b:bravo", "a:bar b:alpha", "a:bar b:bravo"]);
+    }
+
+    #[test]
+    fn list_of_objects() {
+        let input = json!({
+            "a": "foo",
+            "b": [
+                {
+                    "c": "alpha",
+                    "d": "bravo",
+                },
+                {
+                    "c": "charlie",
+                    "d": "delta",
+                }
+            ]
+        });
+        assert_columns_and_rows(input, "a b.c b.d", &vec!["a:foo b.c:alpha b.d:bravo", "a:foo b.c:charlie b.d:delta"]);
+    }
+
+    #[test]
+    fn merge_disjoint_keys() {
+        let input = json!([
+            {
+                "a": "alpha",
+            },
+            {
+                "b": "bravo",
+                "c": "charlie",
+            }
+        ]);
+        assert_columns_and_rows(input, "a b c", &vec!["a:alpha b: c:", "a: b:bravo c:charlie"]);
+    }
+
+
 }
