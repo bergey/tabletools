@@ -21,16 +21,24 @@ fn singleton(path: &str, value: String) -> Vec<Row> {
     ret
 }
 
+// a single row with no columns, as base case for fold
+fn empty() -> Vec<Row> {
+    let row = HashMap::new();
+    let mut ret = Vec::new();
+    ret.push(row);
+    ret
+}
+
 fn recurse_array(columns: &mut Columns, path: &str, array: Vec<Value>) -> Vec<Row> {
-    array.iter().fold(Vec::new(), |mut acc, val| {
+    array.iter().fold(empty(), |mut acc, val| {
         acc.append(&mut recurse_value(columns, path, val.clone()));
         acc
     })
 }
 
 fn recurse_map(columns: &mut Columns, path: &str, map: Map<String, Value>) -> Vec<Row> {
-    map.iter().fold(Vec::new(), |acc, (key, value)| {
-        let path_key = format!("{}.{}", path, key);
+    map.iter().fold(empty(), |acc, (key, value)| {
+        let path_key = if path == "" { key.clone() } else { format!("{}.{}", path, key) };
         let rhs = recurse_value(columns, &path_key, value.clone());
         let mut ret = Vec::new();
         // merge each possible pair of partial rows
@@ -87,4 +95,55 @@ fn main() -> io::Result<()> {
         println!("{}", out.join(" "));
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn leafs() -> Value {
+        json!({
+            "n": 123,
+            "b": true,
+        })
+    }
+
+    fn assert_columns_eq(actual: &Columns, expected: &str) {
+        let words: Vec<&str> = expected.split_whitespace().collect();
+        assert!(actual.len() == words.len(), "{:?} has length {} expected {}", actual, actual.len(), words.len());
+        for (a, e) in std::iter::zip(actual, words) {
+            assert_eq!(a, e);
+        }
+    }
+
+    fn assert_row_eq(actual: &Row, expected: &str) {
+        let pairs: Vec<(&str, &str)> = expected.split_whitespace().map(|w| {
+            let mut kv = w.split(":");
+            (kv.next().unwrap(), kv.next().unwrap())
+        }).collect();
+        assert!(actual.len() == pairs.len(), "{:?} has length {} expected {}", actual, actual.len(), pairs.len());
+        for (k, v) in pairs {
+            let o_v = actual.get(k);
+            match o_v {
+                None => panic!("expected row to include key {}", k),
+                Some(a) => assert!(a == v, "row has {} at key {} expected {}", a, k, v),
+            }
+        }
+    }
+
+    #[test]
+    fn columns_leafs() {
+        let mut columns = Vec::new();
+        recurse_value(&mut columns, "", leafs());
+        assert_columns_eq(&columns, "b n");
+    }
+
+    #[test]
+    fn row_leafs() {
+        let mut columns = Vec::new();
+        let rows = recurse_value(&mut columns, "", leafs());
+        assert_eq!(rows.len(), 1);
+        assert_row_eq(&rows[0], "n:123 b:true");
+    }
 }
