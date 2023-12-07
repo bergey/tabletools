@@ -1,0 +1,50 @@
+[
+    {
+        "title": "Software Abstractions",
+        "subtitle": "Logic, Language, and Analysis",
+        "authors": "Daniel Jackson",
+        "date": 2012,
+        "publisher": {
+            "name": "MIT Press",
+            "locations": [
+                "Cambridge, Massachusetts",
+                "London, England"
+            ]
+        }
+    },
+    {
+        "title": "UNIX Programming Environment, The",
+        "authors": [
+            "Brian W Kernighan",
+            "Rob Pike"
+        ],
+        "date": 1984,
+        "publisher": {
+            "name": "Bell Laboratories",
+            "locations": [
+                "Murray Hill, New Jersey"
+            ]
+        }
+    },
+    {
+        "title": "Types and Programming Languages",
+        "authors": "Benjamin C. Pierce",
+        "date": 2002,
+        "publisher": {
+            "name": "MIT Press",
+            "locations": [
+                "Cambridge, Massachusetts",
+                "London, England"
+            ]
+        }
+    },
+    {
+        "title": "Performance Modeling and Design of Computer Systems",
+        "subtitle": "Queuing Theory in Action",
+        "authors": "Mor Harchol-Balter",
+        "date": 2013,
+        "publisher": {
+            "name": "Cambridge University Press"
+        }
+    }
+]
