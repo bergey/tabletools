@@ -28,6 +28,8 @@ impl fmt::Display for SplitWhitespace {
 struct Cli {
     #[command()]
     output_columns: Vec<String>,
+    #[arg(long, short, help="case insensitive match for column names")]
+    insensitive: bool,
     #[arg(long, short, help="additional column delimiters", default_value="")]
     delimiters: String,
     #[arg(long, short, help="whitespace delimited?", default_value_t=SplitWhitespace::Any)]
@@ -52,6 +54,7 @@ impl Default for Cli {
     fn default() -> Self {
         Cli {
             output_columns: Vec::new(),
+            insensitive: false,
             header: false,
             delimiters: "".to_string(),
             whitespace: SplitWhitespace::Any,
@@ -169,7 +172,7 @@ fn split_line(columns: &[(usize, usize)], line: &str) -> Vec<String> {
     out
 }
 
-fn output_columns(columns: &[(usize, usize)], header: &str, desired: &[String]) -> Vec<(usize, usize)>{
+fn output_columns(columns: &[(usize, usize)], header: &str, desired: &[String], insensitive: bool) -> Vec<(usize, usize)>{
     if desired.len() == 0 {
         return columns.to_vec();
     }
@@ -177,12 +180,22 @@ fn output_columns(columns: &[(usize, usize)], header: &str, desired: &[String]) 
     let headings = split_line(columns, header);
     let mut mapping = HashMap::new();
     for (head, range) in std::iter::zip(headings, columns) {
-        mapping.insert(head, range);
+        if insensitive {
+            mapping.insert(head.to_lowercase(), range);
+        } else {
+            mapping.insert(head, range);
+        }
     }
 
     let mut ret = Vec::new();
     for head in desired {
-        match mapping.get(head) {
+        let o_range = if insensitive {
+            let h = head.to_lowercase();
+            mapping.get(&h)
+        } else {
+            mapping.get(head)
+        };
+        match o_range {
             Some(range) => ret.push(**range),
             None => (), // TODO error?
         }
@@ -214,7 +227,7 @@ fn main() -> io::Result<()> {
         lines.iter().fold(Vec::new(), |spaces, string| { update_spaces(&args, spaces, string) })
     };
     let columns = columns(&spaces);
-    let output_columns = output_columns(&columns, &lines[0], args.output_columns.as_ref());
+    let output_columns = output_columns(&columns, &lines[0], args.output_columns.as_ref(), args.insensitive);
 
     for string in lines {
         let outln = split_line(&output_columns, &string);
