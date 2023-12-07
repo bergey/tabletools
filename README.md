@@ -10,6 +10,8 @@ Docker output is easy to read, but particularly annoying to work with programati
 
 `docker ps | unjustify --whitespace=double`
 
+### --help
+
 ```
 make tables formatted for human readers easier to program against
 
@@ -86,6 +88,8 @@ Benjamin C. Pierce|2002|Cambridge, Massachusetts|MIT Press||Types and Programmin
 Benjamin C. Pierce|2002|London, England|MIT Press||Types and Programming Languages
 Mor Harchol-Balter|2013||Cambridge University Press|Queuing Theory in Action|Performance Modeling and Design of Computer Systems
 ```
+
+### --help
 
 ```
 turn nested JSON into tables
