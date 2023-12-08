@@ -2,6 +2,8 @@
 
 A collection of command-line programs for working with semi-structured data.
 
+This is very new software, and the names of command-line flags will likely change between versions.
+
 ## unjustify
 
 ### examples
